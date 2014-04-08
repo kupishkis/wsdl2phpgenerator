@@ -79,6 +79,13 @@ class Generator implements GeneratorInterface
      */
     private $logger;
 
+    /**
+     * Different service name.
+     *
+     * @var string
+     */
+    private $serviceName = null;
+
 
     /**
      * Construct the generator
@@ -96,8 +103,11 @@ class Generator implements GeneratorInterface
      * Generates php source code from a wsdl file
      *
      * @param ConfigInterface $config The config to use for generation
+     * @param null|string $serviceName
+     * @throws \InvalidArgumentException
+     * @throws \Exception
      */
-    public function generate(ConfigInterface $config)
+    public function generate(ConfigInterface $config, $serviceName = null)
     {
         $this->config = $config;
 
@@ -109,7 +119,7 @@ class Generator implements GeneratorInterface
                 $this->load($ws);
             }
         } else {
-            $this->load($wsdl);
+            $this->load($wsdl, $serviceName);
         }
 
         $this->savePhp();
@@ -121,7 +131,7 @@ class Generator implements GeneratorInterface
     /**
      * Load the wsdl file into php
      */
-    private function load($wsdl)
+    private function load($wsdl, $serviceName = null)
     {
         try {
             $this->log('Loading the wsdl');
@@ -162,7 +172,7 @@ class Generator implements GeneratorInterface
 
         $this->loadSchema();
         $this->loadTypes();
-        $this->loadService();
+        $this->loadService($serviceName);
     }
 
     /**
@@ -189,9 +199,12 @@ class Generator implements GeneratorInterface
     /**
      * Loads the service class
      */
-    private function loadService()
+    private function loadService($name = null)
     {
-        $name = $this->dom[0]->getElementsByTagNameNS('*', 'service')->item(0)->getAttribute('name');
+        if (null === $name) {
+            $serviceItems = $this->dom[0]->getElementsByTagNameNS('*', 'service');
+            $name = $serviceItems->item(0)->getAttribute('name');
+        }
 
         $this->log('Starting to load service ' . $name);
 
@@ -230,6 +243,8 @@ class Generator implements GeneratorInterface
 
         $types = $this->client->__getTypes();
 
+        $simpleTypeContainer = new SimpleTypeContainer();
+
         foreach ($types as $typeStr) {
             $wsdlNewline = (strpos($typeStr, "\r\n") ? "\r\n" : "\n");
             $parts = explode($wsdlNewline, $typeStr);
@@ -242,12 +257,24 @@ class Generator implements GeneratorInterface
                 continue;
             }
 
+            if ('string' === $restriction) {
+                $simpleTypeContainer->mapSimpleType($className, 'string');
+                continue;
+            }
+
+            if ('decimal' === $restriction) {
+                $simpleTypeContainer->mapSimpleType($className, 'decimal');
+                continue;
+            }
+
+            $simpleTypeContainer->mapComplexType($className, $restriction);
+
             $arrayVars = $this->findArrayElements($className);
             $type = null;
             $numParts = count($parts);
             // ComplexType
             if ($numParts > 1) {
-                $type = new ComplexType($this->config, $className);
+                $type = new ComplexType($this->config, $className, $simpleTypeContainer);
                 $this->log('Loading type ' . $type->getPhpIdentifier());
 
                 for ($i = 1; $i < $numParts - 1; $i++) {
