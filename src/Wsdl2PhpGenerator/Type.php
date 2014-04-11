@@ -65,7 +65,7 @@ abstract class Type
             $name .= 'Custom';
         }
 
-        $this->phpIdentifier = $name;
+        $this->phpIdentifier = Variable::underscoresToCamelCase($name, true);
     }
 
     /**

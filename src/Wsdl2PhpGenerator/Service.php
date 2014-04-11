@@ -95,7 +95,7 @@ class Service
         }
 
         // uppercase the name
-        $name = ucfirst($name);
+        $name = Variable::underscoresToCamelCase($name, true);
 
         // Create the class object
         $comment = new PhpDocComment($this->description);
@@ -126,11 +126,19 @@ class Service
         $comment->setAccess(PhpDocElementFactory::getPrivateAccess());
         $comment->setVar(PhpDocElementFactory::getVar('array', $name, 'The defined classes'));
 
-        $init = 'array(' . PHP_EOL;
+        $classmapArray = [];
         foreach ($this->types as $type) {
             if ($type instanceof ComplexType) {
-                $init .= "  '" . $type->getIdentifier() . "' => '" . $this->config->getNamespaceName() . "\\" . $type->getPhpIdentifier() . "'," . PHP_EOL;
+                $classmapArray[$type->getIdentifier()] = [
+                    'fullName' => $this->config->getNamespaceName() . "\\" . $type->getPhpIdentifier(),
+                    'name' => $type->getPhpIdentifier(),
+                ];
             }
+        }
+
+        $init = 'array(' . PHP_EOL;
+        foreach ($classmapArray as $identifier => $mappedClass) {
+            $init .= "  '" . $identifier . "' => '" . $mappedClass['fullName'] . "'," . PHP_EOL;
         }
         $init = substr($init, 0, strrpos($init, ','));
         $init .= ')';
@@ -149,7 +157,13 @@ class Service
 
             $comment = new PhpDocComment($operation->getDescription());
             $comment->setAccess(PhpDocElementFactory::getPublicAccess());
-            $comment->setReturn(PhpDocElementFactory::getReturn($operation->getReturns(), ''));
+
+            $returnClassPhpIdentifier = $operation->getReturns();
+            if (isset($classmapArray[$returnClassPhpIdentifier])) {
+                $returnClassPhpIdentifier = $classmapArray[$returnClassPhpIdentifier]['name'];
+            }
+
+            $comment->setReturn(PhpDocElementFactory::getReturn($returnClassPhpIdentifier, ''));
 
             foreach ($operation->getParams() as $param => $hint) {
                 $arr = $operation->getPhpDocParams($param, $this->types);
@@ -160,7 +174,7 @@ class Service
 
             $paramStr = $operation->getParamString($this->types);
 
-            $function = new PhpFunction('public', $name, $paramStr, $source, $comment);
+            $function = new PhpFunction('public', Variable::underscoresToCamelCase($name), $paramStr, $source, $comment);
 
             if ($this->class->functionExists($function->getIdentifier()) == false) {
                 $this->class->addFunction($function);
